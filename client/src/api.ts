@@ -46,22 +46,54 @@ export interface CohortFilter {
   ageMin?: number;
   ageMax?: number;
   page?: number;
+  pageSize?: number;
 }
 
-export async function fetchCohort(filter: CohortFilter) {
+export interface CohortPatientRow {
+  patientId: string;
+  sex: string;
+  race: string;
+  ageAtDiagnosis: number;
+  vitalStatus: string;
+  survivalMonths: number;
+  condition?: { diagnosisLabel: string; cancerCategory: string; riskGroup: string };
+}
+
+export interface CohortPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  results: CohortPatientRow[];
+}
+
+export async function fetchCohort(filter: CohortFilter): Promise<CohortPage> {
   const res = await api.get("/cohorts", { params: filter });
-  return res.data as {
-    total: number;
-    page: number;
-    pageSize: number;
-    results: Array<{
-      patientId: string;
-      sex: string;
-      race: string;
-      ageAtDiagnosis: number;
-      vitalStatus: string;
-      survivalMonths: number;
-      condition?: { diagnosisLabel: string; cancerCategory: string; riskGroup: string };
-    }>;
-  };
+  return res.data;
+}
+
+export interface TreatmentCourseRow {
+  protocolName: string;
+  treatmentType: string;
+  regimenDrugs: string[];
+  startOffsetDays: number;
+  durationDays: number;
+}
+
+export interface ObservationRow {
+  code: string;
+  valueString?: string;
+  valueNumber?: number;
+  timepointOffsetDays: number;
+}
+
+export interface PatientDetail {
+  patient: CohortPatientRow & { diagnosisYear: number; ethnicity: string };
+  condition?: { diagnosisLabel: string; cancerCategory: string; riskGroup: string; stage: string };
+  treatments: TreatmentCourseRow[];
+  observations: ObservationRow[];
+}
+
+export async function fetchPatientDetail(patientId: string): Promise<PatientDetail> {
+  const res = await api.get(`/cohorts/${patientId}`);
+  return res.data;
 }

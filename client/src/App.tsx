@@ -18,7 +18,9 @@ import {
   type SurvivalRow,
   type ProtocolOutcomeRow,
   type DemographicsRow,
+  type CohortPage,
 } from "./api";
+import PatientDetailPanel from "./PatientDetailPanel";
 import "./App.css";
 
 const RISK_COLORS: Record<string, string> = {
@@ -27,6 +29,8 @@ const RISK_COLORS: Record<string, string> = {
   high: "#f5a623",
   very_high: "#e5484d",
 };
+
+const PAGE_SIZE = 10;
 
 function useAsync<T>(fetcher: () => Promise<T>) {
   const [data, setData] = useState<T | null>(null);
@@ -56,16 +60,34 @@ function App() {
   const demographics = useAsync<DemographicsRow[]>(fetchDemographics);
 
   const [categoryFilter, setCategoryFilter] = useState<string>("");
-  const [cohortTotal, setCohortTotal] = useState<number | null>(null);
+  const [riskFilter, setRiskFilter] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const [cohort, setCohort] = useState<CohortPage | null>(null);
+  const [cohortError, setCohortError] = useState<string | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchCohort({ cancerCategory: categoryFilter || undefined })
-      .then((res) => setCohortTotal(res.total))
-      .catch(() => setCohortTotal(null));
-  }, [categoryFilter]);
+    setPage(1);
+  }, [categoryFilter, riskFilter]);
+
+  useEffect(() => {
+    fetchCohort({
+      cancerCategory: categoryFilter || undefined,
+      riskGroup: riskFilter || undefined,
+      page,
+      pageSize: PAGE_SIZE,
+    })
+      .then((res) => {
+        setCohort(res);
+        setCohortError(null);
+      })
+      .catch((err) => setCohortError(err.message ?? "Failed to load cohort"));
+  }, [categoryFilter, riskFilter, page]);
 
   const categories = Array.from(new Set(survival.data?.map((r) => r.cancerCategory) ?? []));
+  const riskGroups = Array.from(new Set(survival.data?.map((r) => r.riskGroup) ?? []));
   const loadError = survival.error || protocols.error || demographics.error;
+  const totalPages = cohort ? Math.max(1, Math.ceil(cohort.total / cohort.pageSize)) : 1;
 
   return (
     <div className="dashboard">
@@ -115,20 +137,77 @@ function App() {
 
       <section className="card">
         <h2>Cohort Builder</h2>
-        <label>
-          Cancer category:&nbsp;
-          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            <option value="">All</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="filters">
+          <label>
+            Cancer category:&nbsp;
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+              <option value="">All</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Risk group:&nbsp;
+            <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)}>
+              <option value="">All</option>
+              {riskGroups.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {cohortError && <div className="banner error">{cohortError}</div>}
+
         <p className="cohort-count">
-          {cohortTotal === null ? "Loading..." : `${cohortTotal} matching patients`}
+          {cohort === null ? "Loading..." : `${cohort.total} matching patients`}
         </p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Diagnosis</th>
+              <th>Risk group</th>
+              <th>Age</th>
+              <th>Sex</th>
+              <th>Vital status</th>
+              <th>Survival (mo)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(cohort?.results ?? []).map((p) => (
+              <tr
+                key={p.patientId}
+                className="clickable-row"
+                onClick={() => setSelectedPatientId(p.patientId)}
+              >
+                <td>{p.condition?.diagnosisLabel}</td>
+                <td>{p.condition?.riskGroup}</td>
+                <td>{p.ageAtDiagnosis}</td>
+                <td>{p.sex}</td>
+                <td>{p.vitalStatus}</td>
+                <td>{p.survivalMonths}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="pagination">
+          <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            Previous
+          </button>
+          <span>
+            Page {page} of {totalPages}
+          </span>
+          <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+            Next
+          </button>
+        </div>
       </section>
 
       <section className="card">
@@ -152,6 +231,13 @@ function App() {
           </tbody>
         </table>
       </section>
+
+      {selectedPatientId && (
+        <PatientDetailPanel
+          patientId={selectedPatientId}
+          onClose={() => setSelectedPatientId(null)}
+        />
+      )}
     </div>
   );
 }
